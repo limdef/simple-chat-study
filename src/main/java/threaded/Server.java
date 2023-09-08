@@ -1,16 +1,19 @@
 package threaded;
 
+import org.apache.commons.lang3.RandomStringUtils;
+
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class Server {
     public static ConcurrentLinkedQueue<ClientThread> clients = new ConcurrentLinkedQueue<>();
 
-    private int port;
-    private long clientNum = 1L;
+    private final int port;
+    private final AtomicLong clientNum = new AtomicLong(0L);
 
     public Server(int port) {
         this.port = port;
@@ -27,7 +30,7 @@ public class Server {
                 ClientThread curClient = new ClientThread(clientSocket, clients, clientNum);
                 clients.add(curClient);
                 curClient.start();
-                clientNum++;
+                clientNum.getAndIncrement();
 
             } else {
                 // 100명 초과일 경우
@@ -42,64 +45,73 @@ public class Server {
 }
 
 class ClientThread extends Thread {
-    private String clientName;
-    private Socket clientSocket;
-    private BufferedReader reader;
-    private BufferedWriter writer;
+    private final int RANDOM_STR_LEN = 8;
+    private String name;
+    private final Socket socket;
+    private AtomicLong clientNum;
+    private OutputStream os;
+    private DataInputStream dis;
     private ConcurrentLinkedQueue<ClientThread> clients;
 
-    public ClientThread(Socket clientSocket, ConcurrentLinkedQueue<ClientThread> clients, long clientNum) throws IOException {
-        this.clientName = "member-" + clientNum;
-        this.clientSocket = clientSocket;
+    public ClientThread(Socket clientSocket, ConcurrentLinkedQueue<ClientThread> clients, AtomicLong clientNum) throws IOException {
+        this.name = RandomStringUtils.randomAlphanumeric(RANDOM_STR_LEN);
+        this.socket = clientSocket;
         this.clients = clients;
+        this.clientNum = clientNum;
 
-        broadcast("[SERVER] " + clientName + " has joined");
+        broadcast(("[SERVER] " + this.name + " has joined").getBytes(StandardCharsets.UTF_8));
     }
 
     public void run() {
         try {
+            dis = new DataInputStream(socket.getInputStream());
+            os = socket.getOutputStream();
 
-            reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream(), StandardCharsets.UTF_8));
-            writer = new BufferedWriter(new OutputStreamWriter(clientSocket.getOutputStream(), StandardCharsets.UTF_8));
-
-            unicast("[SERVER] welcome to our chat server!");
+            unicast("[SERVER] welcome to our chat server!".getBytes(StandardCharsets.UTF_8));
 
             while (true) {
-                String msg;
-                if ((msg = reader.readLine()) != null) {
-                    // TODO 명령어 기능 추가
-                    broadcast(msg);
-                } else {
+                int msgLen = dis.readInt();
+                byte[] buffer = new byte[msgLen];
+                int read = dis.read(buffer, 0, msgLen);
+                if (read == -1) {
                     throw new IOException();
                 }
+                broadcast(buffer);
             }
 
         } catch (IOException e) {
             // read IOException
-            System.out.println(clientName + " session terminated");
+            System.out.println(name + " session terminated");
+            clientNum.getAndDecrement();
 
         } finally {
             close();
         }
     }
 
-    private void unicast(String msg) throws IOException {
-        writer.write(msg);
-        writer.write('\n');
-        writer.flush();
+    private void unicast(byte[] msg) throws IOException {
+        os.write(msg);
+        os.flush();
     }
 
-    private void broadcast(String msg) throws IOException {
+    private void unicast(String name, byte[] msg) throws IOException {
+        os.write((name + " : ").getBytes());
+        os.write(msg);
+        os.write('\n');
+        os.flush();
+    }
+
+    private void broadcast(byte[] msg) throws IOException {
         for (ClientThread client : clients) {
-            client.unicast(clientName + " : " + msg);
+            client.unicast(this.name, msg);
         }
     }
 
     private void close() {
         try {
-            if (writer != null) writer.close();
-            if (reader != null) reader.close();
-            if (clientSocket != null && !clientSocket.isClosed()) clientSocket.close();
+            if (os != null) os.close();
+            if (dis != null) dis.close();
+            if (socket != null && !socket.isClosed()) socket.close();
             if (clients != null) clients.remove(this);
 
         } catch (IOException e) {
