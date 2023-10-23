@@ -2,7 +2,7 @@ package threaded;
 
 import java.io.IOException;
 
-public class ChatServerApplication {
+public class ThreadedServerApplication {
     public static void main(String[] args) throws IOException {
         if (args.length != 1) {
             System.err.println("please enter port number");

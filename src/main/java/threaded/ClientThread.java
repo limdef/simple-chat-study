@@ -1,0 +1,114 @@
+package threaded;
+
+import org.apache.commons.lang3.RandomStringUtils;
+import threaded.command.CommandHandler;
+
+import java.io.DataInputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicLong;
+
+public class ClientThread extends Thread {
+    private final Socket socket;
+    private String name;
+    private OutputStream os;
+    private DataInputStream dis;
+    private final ConcurrentHashMap<String, ClientThread> clients;
+
+    private final CommandHandler commandHandler;
+
+    public ClientThread(
+            Socket clientSocket,
+            ConcurrentHashMap<String, ClientThread> clients,
+            CommandHandler commandHandler
+    ) throws IOException {
+        this.socket = clientSocket;
+        this.clients = clients;
+        this.commandHandler = commandHandler;
+
+        add(this);
+
+        dis = new DataInputStream(socket.getInputStream());
+        os = socket.getOutputStream();
+
+        broadcast(("[SERVER] " + this.name + " has joined").getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void add(ClientThread clientThread) {
+        String name;
+        do {
+            name = RandomStringUtils.randomAlphanumeric(8);
+        } while (clients.putIfAbsent(name, clientThread) != null);
+
+        this.name = name;
+    }
+
+    public void run() {
+        try {
+            unicast("[SERVER] welcome to our chat server!".getBytes(StandardCharsets.UTF_8));
+
+            while (true) {
+                int msgLen = dis.readInt();
+                byte[] buffer = new byte[msgLen];
+                int read = dis.read(buffer, 0, msgLen);
+                if (read == -1) {
+                    throw new IOException();
+                }
+                commandHandler.handle(clients, this, buffer);
+            }
+
+        } catch (IOException e) {
+            // read IOException
+            System.out.println(name + " session terminated");
+            clients.remove(this.name);
+
+        } finally {
+            close();
+        }
+    }
+
+    public void unicast(byte[] msg) throws IOException {
+        os.write(msg);
+        os.flush();
+    }
+
+    public void unicast(String name, byte[] msg) throws IOException {
+        os.write((name + " : ").getBytes(StandardCharsets.UTF_8));
+        os.write(msg);
+        os.write('\n');
+        os.flush();
+    }
+
+    public void broadcast(byte[] msg) throws IOException {
+        for (Map.Entry<String, ClientThread> entry : clients.entrySet()) {
+            String key = entry.getKey();
+            ClientThread value = entry.getValue();
+            value.unicast(key, msg);
+        }
+    }
+
+    private void close() {
+        try {
+            if (os != null) os.close();
+            if (dis != null) dis.close();
+            if (socket != null && !socket.isClosed()) socket.close();
+            if (clients != null) clients.remove(this.name);
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public String getMyName() {
+        return name;
+    }
+
+    public void setMyName(String s) {
+        this.name = s;
+    }
+}
