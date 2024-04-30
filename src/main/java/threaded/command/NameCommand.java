@@ -10,7 +10,7 @@ class NameCommand implements Command {
     @Override
     public void execute(ConcurrentHashMap<String, ClientThread> concurrentHashMap, ClientThread clientThread, String[] cmd) throws IOException {
         if (cmd.length > 2) {
-            clientThread.unicast("name is not allowed white space".getBytes(StandardCharsets.UTF_8));
+            clientThread.unicast("[SERVER] name is not allowed white space".getBytes(StandardCharsets.UTF_8));
             return;
         }
 
@@ -18,13 +18,13 @@ class NameCommand implements Command {
 
         ClientThread ct = concurrentHashMap.putIfAbsent(cmd[1], clientThread);
         if (ct != null) {
-            clientThread.unicast("this name is already in used".getBytes(StandardCharsets.UTF_8));
+            clientThread.unicast("[SERVER] this name is already in used".getBytes(StandardCharsets.UTF_8));
             return;
         }
 
         concurrentHashMap.remove(clientThread.getMyName());
         clientThread.setMyName(cmd[1]);
 
-        clientThread.unicast(("name changed to " + cmd[1]).getBytes(StandardCharsets.UTF_8));
+        clientThread.unicast(("[SERVER] name changed to " + cmd[1]).getBytes(StandardCharsets.UTF_8));
     }
 }

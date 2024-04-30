@@ -1,6 +1,9 @@
 import socket
 import threading
 import sys
+import os, signal
+
+exit_event = threading.Event()
 
 def validate_port(port):
     try:
@@ -24,22 +27,41 @@ except Exception as e:
     print(f"connection failed : {e}")
     sys.exit()
 
+def close():
+    exit_event.set()
+    client.close()
+
+def handler(signum, frame):
+    close()
+
+signal.signal(signal.SIGINT, handler)
+signal.signal(signal.SIGTERM, handler)
+
 def client_receive():
-    while True:
+    while not exit_event.is_set():
         try:
             # recv는 블로킹 함수, 1024는 버퍼 사이즈
             # 도착한 데이터가 버퍼보다 작으면 반환 후 종료. 크면 버퍼 사이즈만큼 반환 후 소켓 버퍼에 데이터가 남아있음.
             msg = client.recv(1024).decode('utf-8')
-            print(msg)
+            if msg:
+                print(msg)
+            else:
+                print("Server has closed the connection")
+                break
+        except OSError as e:
+            if e.errno == 9:
+                break
+            print(f"RECEIVE ERROR : {e}")
+            break
         except Exception as e:
             print(f"RECEIVE ERROR : {e}")
-            client.close()
             break
+    close()
 
 def client_send():
     print("Please enter a message (or type 'quit' to quit) \n")
     msg = ''
-    while True:
+    while not exit_event.is_set():
         try:
             user_input = input('')
             user_input = user_input.strip()
@@ -75,8 +97,9 @@ def client_send():
 
         except Exception as e:
             print(f"SEND ERROR : {e}")
-            client.close()
             break
+    close()
+    
 
 receive_thread = threading.Thread(target=client_receive)
 receive_thread.start()
@@ -84,4 +107,7 @@ receive_thread.start()
 send_thread = threading.Thread(target=client_send)
 send_thread.start()
 
-# TODO 두 스레드 중 하나만 종료되어도 프로그램 종료
+# 두 스레드 중 하나만 종료되어도 메인 프로그램 종료
+exit_event.wait()
+print("Main Program Terminated...")
+os._exit(0) # 즉시 종료

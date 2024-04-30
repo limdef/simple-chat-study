@@ -3,6 +3,7 @@ package threaded;
 import org.apache.commons.lang3.RandomStringUtils;
 import threaded.command.CommandHandler;
 
+import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -10,15 +11,14 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class ClientThread extends Thread {
     private final Socket socket;
+    private final ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    private final ConcurrentHashMap<String, ClientThread> clients;
     private String name;
     private OutputStream os;
     private DataInputStream dis;
-    private final ConcurrentHashMap<String, ClientThread> clients;
 
     private final CommandHandler commandHandler;
 
@@ -36,7 +36,7 @@ public class ClientThread extends Thread {
         dis = new DataInputStream(socket.getInputStream());
         os = socket.getOutputStream();
 
-        broadcast(("[SERVER] " + this.name + " has joined").getBytes(StandardCharsets.UTF_8));
+        notify(("[SERVER] " + this.name + " has joined").getBytes(StandardCharsets.UTF_8));
     }
 
     private void add(ClientThread clientThread) {
@@ -78,17 +78,22 @@ public class ClientThread extends Thread {
     }
 
     public void unicast(String name, byte[] msg) throws IOException {
-        os.write((name + " : ").getBytes(StandardCharsets.UTF_8));
-        os.write(msg);
-        os.write('\n');
+        baos.write((name + " : ").getBytes(StandardCharsets.UTF_8));
+        baos.write(msg);
+        os.write(baos.toByteArray());
         os.flush();
+        baos.reset();
     }
 
     public void broadcast(byte[] msg) throws IOException {
         for (Map.Entry<String, ClientThread> entry : clients.entrySet()) {
-            String key = entry.getKey();
-            ClientThread value = entry.getValue();
-            value.unicast(key, msg);
+            entry.getValue().unicast(name, msg);
+        }
+    }
+
+    public void notify(byte[] msg) throws IOException {
+        for (Map.Entry<String, ClientThread> entry : clients.entrySet()) {
+            entry.getValue().unicast(msg);
         }
     }
 
