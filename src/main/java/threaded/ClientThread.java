@@ -16,11 +16,11 @@ public class ClientThread extends Thread {
     private final Socket socket;
     private final ByteArrayOutputStream baos = new ByteArrayOutputStream();
     private final ConcurrentHashMap<String, ClientThread> clients;
+    private final CommandHandler commandHandler;
     private String name;
+    private String lastWhisperName;
     private OutputStream os;
     private DataInputStream dis;
-
-    private final CommandHandler commandHandler;
 
     public ClientThread(
             Socket clientSocket,
@@ -115,5 +115,13 @@ public class ClientThread extends Thread {
 
     public void setMyName(String s) {
         this.name = s;
+    }
+
+    public String getLastWhisperName() {
+        return lastWhisperName;
+    }
+
+    public void setLastWhisperName(String s) {
+        this.lastWhisperName = s;
     }
 }
